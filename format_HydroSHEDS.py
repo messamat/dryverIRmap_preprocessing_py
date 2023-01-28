@@ -3,7 +3,7 @@ from utility_functions import *
 arcpy.CheckOutExtension('Spatial')
 arcpy.env.overwriteOutput = True
 
-hydrogeomdir = os.path.join(datdir, 'Bernhard', 'HydroATLAS', 'HydroATLAS_Geometry')
+hydrogeomdir = os.path.join(datdir, 'HydroATLAS', 'HydroATLAS_Geometry')
 hydrotemplate = os.path.join(hydrogeomdir, 'Masks', 'hydrosheds_landmask_15s.gdb', 'hys_land_15s')
 hydrocoast = os.path.join(hydrogeomdir, 'Ocean_correction', 'ocean_mask_20km_global.gdb', 'oc_mask_20km')
 
