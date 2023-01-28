@@ -1,11 +1,12 @@
 '''Purpose: download Global Aridity Index and Potential Evapotranspiration ET0 Climate Database v2'''
 from utility_functions import *
 
-GAIv2dir = os.path.join(datdir, 'GAIv2')
-pathcheckcreate(GAIv2dir)
+GAIv3dir = os.path.join(datdir, 'GAIv3')
+pathcheckcreate(GAIv3dir)
 
 #https://figshare.com/articles/Global_Aridity_Index_and_Potential_Evapotranspiration_ET0_Climate_Database_v2/7504448/3
-dlfile(url = "https://ndownloader.figshare.com/files/14118800",
-       outpath = GAIv2dir,
-       outfile = 'GAIv2.zip',
+dlfile(url = "https://figshare.com/ndownloader/files/34377269",
+       outpath = GAIv3dir,
+       outfile = 'Global-AI_v3_monthly',
        ignore_downloadable=True)
+
