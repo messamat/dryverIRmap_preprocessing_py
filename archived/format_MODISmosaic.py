@@ -6,9 +6,6 @@ arcpy.CheckOutExtension('Spatial')
 arcpy.env.overwriteOutput = True
 
 # Set up dir structure
-rootdir = os.path.dirname(os.path.abspath(__file__)).split('\\src')[0]
-datdir = os.path.join(rootdir, 'data')
-resdir = os.path.join(rootdir, 'results')
 scratchdir = os.path.join(rootdir, 'scratch')
 scratchgdb = os.path.join(scratchdir, 'scratch.gdb')
 pathcheckcreate(scratchgdb)
