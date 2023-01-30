@@ -66,6 +66,8 @@ dryver_netras = os.path.join(process_gdb, 'netras_dryver_upao2_dis003')
 dryver_netlinks = os.path.join(process_gdb, 'links_dryver_upao2_dis003')
 dryver_netline = os.path.join(process_gdb, 'net_dryver_upao2_dis003')
 dryver_netpourpoints_ras = os.path.join(process_gdb, 'net_dryver_upao2_dis003_pourpoints_ras')
+dryver_netpourpoints = os.path.join(process_gdb, 'net_dryver_upao2_dis003_pourpoints')
+dryver_netcatchments = os.path.join(process_gdb, 'net_dryver_upao2_dis003_catchments') #watershe
 
 dryver_netras_upa01_dis003 = os.path.join(process_gdb, 'netras_dryver_upao1_dis003')
 dryver_netlinks_upa01_dis003 = os.path.join(process_gdb, 'links_dryver_upa01_dis003')
@@ -163,8 +165,10 @@ for country, drn_net_path in drn_dict.items():
                                                   arcpy.da.SearchCursor(drn_firstorder_mid_dict[country], 'mid_dis_nat_15s')],
                                              range(0, 100, 5))
 
-pd.DataFrame.from_dict(drn_firstorder_midupa_dict, orient='columns').to_csv(drn_firstorder_midupa_tab)
-pd.DataFrame.from_dict(drn_firstorder_middis_dict, orient='columns').to_csv(drn_firstorder_middis_tab)
+if not arcpy.Exists(drn_firstorder_midupa_tab):
+    pd.DataFrame.from_dict(drn_firstorder_midupa_dict, orient='columns').to_csv(drn_firstorder_midupa_tab)
+if not arcpy.Exists(drn_firstorder_middis_tab):
+    pd.DataFrame.from_dict(drn_firstorder_middis_dict, orient='columns').to_csv(drn_firstorder_middis_tab)
 
 
 for country, path in drn_firstorder_mid_dict.items():
@@ -218,4 +222,14 @@ if not arcpy.Exists(dryver_netpourpoints_ras):
     Con(Raster(link_maxacc) == Raster(flowacc_dryver), dryver_netlinks).save(dryver_netpourpoints_ras)
 
 #Create pourpoint point feature class
+if not arcpy.Exists(dryver_netpourpoints):
+    arcpy.conversion.RasterToPoint(in_raster = dryver_netpourpoints_ras,
+                                   out_point_features = dryver_netpourpoints,
+                                   raster_field = 'Value')
+
+#Create catchments
+if not arcpy.Exists(dryver_netcatchments):
+    Watershed(in_flow_direction_raster=flowdir_dryver,
+              in_pour_point_data=dryver_netpourpoints_ras,
+              pour_point_field='Value').save(dryver_netcatchments)
 

@@ -1,4 +1,6 @@
 #Import libraries
+import os.path
+
 import arcpy
 import numpy as np
 import pandas as pd
@@ -18,39 +20,26 @@ resdir = os.path.join(rootdir, 'results')
 statpredgdb = os.path.join(resdir, 'DryverIRmodel_static_predictors_forMahdi_20221122', 'static_predictors.gdb')
 
 process_gdb = os.path.join(resdir, 'extend_HydroRIVERS_process.gdb')
-dryver_netpourpoints_ras = os.path.join(process_gdb, 'net_dryver_upao2_dis003_pourpoints_ras')
 dryver_netline = os.path.join(process_gdb, 'net_dryver_upao2_dis003')
 dryver_netpourpoints = os.path.join(process_gdb, 'net_dryver_upao2_dis003_pourpoints')
+dryver_netpourpoints_ras = os.path.join(process_gdb, 'net_dryver_upao2_dis003_pourpoints_ras')
+dryver_netcatchments = os.path.join(process_gdb, 'net_dryver_upao2_dis003_catchments')
 
 #Input variable rasters
 gai3gdb = os.path.join(resdir, 'gai3_uav.gdb')
 
 #Create gdb for static predictors
-dryver_predvargdb = os.path.join(resdir, 'net_dryver_predvars.gdb')
+dryver_predvargdb = os.path.join(resdir, 'net_dryver_predvars_zonalstats.gdb')
 pathcheckcreate(path=dryver_predvargdb, verbose=True)
 
 products_gdb = os.path.join(resdir, 'extend_HydroRIVERS_products.gdb')
 pathcheckcreate(path=products_gdb, verbose=True)
 
+#Output paths
+attri_tab = os.path.join(products_gdb, 'net_dryver_staticpredictors')
+
 #Set environment
 arcpy.env.extent = arcpy.env.snapRaster = dryver_netpourpoints_ras
-
-#Compute groundwater depth in stream catchment
-
-#Compute snow extent in whole catchment
-
-#Export table of reach IDs
-if 'DRYVER_RIVID' not in [f.name for f in arcpy.ListFields(dryver_netline)]:
-    arcpy.management.AlterField(dryver_netline, 'grid_code', 'DRYVER_RIVID')
-
-attri_tab = os.path.join(products_gdb, 'net_dryver_staticpredictors')
-if not arcpy.Exists(attri_tab):
-    arcpy.management.CopyRows(dryver_netline, attri_tab)
-    arcpy.management.DeleteField(attri_tab,
-                                 [f.name for f in arcpy.ListFields(attri_tab)
-                                  if f.name not in [arcpy.Describe(attri_tab).OIDFieldName,
-                                               'DRYVER_RIVID']
-                                 ])
 
 #Insert into a single table
 field_dict = {
@@ -72,58 +61,111 @@ field_dict = {
     'eenv90_slope_deg_x100_uav': 'slp_dg_uav',
     'glims_glacier_ext_pc_acc': 'gla_pc_use',
     'hylak_all_area_pc_x100_acc': 'lka_pc_use',
-    'permafrost_ext_pc_x100_use': 'prm_pc_use'
+    'permafrost_ext_pc_x100_use': 'prm_pc_use',
+    'whymap_karst_v1_ras15s_bool_acc': 'kar_pc_use',
+    'whymap_karst_v1_ras15s_bool': 'kar_pc_p'
 }
 
-#Extract values
-statspred_paths = getfilelist(statpredgdb) + getfilelist(gai3gdb)
+fast_joinfield(in_data=attri_tab,
+               in_field='DRYVER_RIVID',
+               join_table=dryver_netpourpoints,
+               join_field='DRYVER_RIVID',
+               fields=[['whymap_karst_v1_ras15s_bool_acc', 'kar_pc_use'], ['whymap_karst_v1_ras15s_bool', 'kar_pc_p']],
+               round=True)
 
-start = time.time()
-for ras in statspred_paths[3:6]:
-    if os.path.basename(ras) in field_dict:
-        out_field = field_dict[os.path.basename(ras)]
-        if out_field not in [f.name for f in arcpy.ListFields(attri_tab)]:
-            out_tab = os.path.join(dryver_predvargdb, os.path.basename(ras))
+# ----------- Extract values ------------------------------------------------------
+statspred_paths = getfilelist(statpredgdb) + \
+                  getfilelist(gai3gdb, repattern='ai3_[0-9]*_uav$')
 
-            if not arcpy.Exists(out_tab):
-                print(f'Processing zonal statistics for {ras}')
-                ZonalStatisticsAsTable(in_zone_data=dryver_netpourpoints_ras,
-                                       zone_field='Value',
-                                       in_value_raster=ras,
-                                       out_table=out_tab,
-                                       statistics_type='SUM')
-
-            #Tried join field. Stopped after >2h for a single field
-            arcpy.management.AddField(in_table = attri_tab,
-                                      field_name = out_field,
-                                      field_type = 'LONG')
-            val_dict = {row[0] : row[1] for row in arcpy.da.SearchCursor(out_tab, ['VALUE', 'SUM'])}
-            print('Writing in attri_tab')
-            with arcpy.da.UpdateCursor(attri_tab, ['DRYVER_RIVID', out_field]) as cursor:
-                for row in cursor:
-                    row[1] = val_dict[row[0]]
-                    cursor.updateRow(row)
-end = time.time()
-print(end-start)
-
-
-#Try extract to points
-start = time.time()
+flist = [f.name for f in arcpy.ListFields(dryver_netpourpoints)]
 ExtractMultiValuesToPoints(in_point_features = dryver_netpourpoints,
-                           in_rasters = statspred_paths,
+                           in_rasters = [
+                               f for f in statspred_paths #Only extract variable if it is:
+                               if ((os.path.basename(f) in field_dict) and #in list of variales to add
+                                   (os.path.basename(f) not in flist) and #its raw variable name is not already in target table
+                                   (field_dict[os.path.basename(f)] not in flist) #its formatted variable name is not already in target table
+                               )],
                            bilinear_interpolate_values = 'NONE')
-end = time.time()
-print(end-start)
+
+#Format ID name
+if 'DRYVER_RIVID' not in [f.name for f in arcpy.ListFields(dryver_netline)]:
+    arcpy.management.AlterField(dryver_netline, 'grid_code', 'DRYVER_RIVID')
+if 'DRYVER_RIVID' not in [f.name for f in arcpy.ListFields(dryver_netpourpoints)]:
+    arcpy.management.AlterField(dryver_netpourpoints, 'grid_code', 'DRYVER_RIVID')
+
+#Export table and format it
+if not arcpy.Exists(attri_tab):
+    print(f"Copying {attri_tab}...")
+    arcpy.management.CopyRows(dryver_netpourpoints, attri_tab)
+
+    print('Formatting fields...')
+    for field in field_dict:
+        if field in [f.name for f in arcpy.ListFields(attri_tab)]:
+            arcpy.management.AlterField(attri_tab,
+                                        field=field,
+                                        new_field_name=field_dict[field],
+                                        new_field_alias=field_dict[field])
+
+    arcpy.management.DeleteField(attri_tab,
+                                 [f.name for f in arcpy.ListFields(attri_tab)
+                                  if f.name not in [arcpy.Describe(attri_tab).OIDFieldName,
+                                               'DRYVER_RIVID']+list(field_dict.values())
+                                 ])
+#Compute groundwater depth in stream catchment
+gwt_cav_tab = os.path.join(dryver_predvargdb, 'gwt_cm_cav')
+if not arcpy.Exists(gwt_cav_tab):
+    ZonalStatisticsAsTable(in_zone_data=dryver_netcatchments,
+                           zone_field='Value',
+                           in_value_raster=os.path.join(statpredgdb, 'fan_gwt_depth_mm_px'),
+                           out_table=gwt_cav_tab,
+                           ignore_nodata='DATA',
+                           statistics_type='MEAN')
 
 
-        # JoinField(in_data=attri_tab,
-        #                        in_field = 'DRYVER_RIVID',
-        #                        join_table= test_tab,
-        #                        join_field = 'VALUE',
-        #                        fields = ['SUM']
-        #                        )
-    #arcpy.management.AlterField(attri_tab, 'SUM', out_field)
+fast_joinfield(in_data=attri_tab,
+               in_field='DRYVER_RIVID',
+               join_table=gwt_cav_tab,
+               join_field='Value',
+               fields=[['MEAN', 'gwt_cm_cav']],
+               round=True)
 
+#Compute snow extent in whole catchment
+for ras in getfilelist(dir = statpredgdb, repattern='snow_ext_pc_x100_m[0-9]{2}_px'):
+    out_snow_tab = os.path.join(dryver_predvargdb,
+                                re.sub('px', 'cav', os.path.basename(ras)))
+    if not arcpy.Exists(out_snow_tab):
+        print(f'Processing {out_snow_tab}...')
+        ZonalStatisticsAsTable(in_zone_data=dryver_netcatchments,
+                               zone_field='Value',
+                               in_value_raster=ras,
+                               out_table=out_snow_tab,
+                               ignore_nodata='DATA',
+                               statistics_type='MEAN')
 
+    fast_joinfield(in_data=attri_tab,
+                   in_field='DRYVER_RIVID',
+                   join_table=out_snow_tab,
+                   join_field='Value',
+                   fields=[['MEAN', re.sub('snow_ext_pc_x100_', 'snw_pc_', os.path.basename(out_snow_tab))]],
+                   round=True)
 
+#Compute snow extent in whole catchment
+for ras in getfilelist(dir = statpredgdb, repattern='snow_ext_pc_x100_m[0-9]{2}_px'):
+    out_snow_tab = os.path.join(dryver_predvargdb,
+                                re.sub('px', 'cav', os.path.basename(ras)))
+    if not arcpy.Exists(out_snow_tab):
+        print(f'Processing {out_snow_tab}...')
+        ZonalStatisticsAsTable(in_zone_data=dryver_netcatchments,
+                               zone_field='Value',
+                               in_value_raster=ras,
+                               out_table=out_snow_tab,
+                               ignore_nodata='DATA',
+                               statistics_type='MEAN')
+
+    fast_joinfield(in_data=attri_tab,
+                   in_field='DRYVER_RIVID',
+                   join_table=out_snow_tab,
+                   join_field='Value',
+                   fields=[['MEAN', re.sub('snow_ext_pc_x100_', 'snw_pc_', os.path.basename(out_snow_tab))]],
+                   round=True)
 

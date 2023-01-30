@@ -167,7 +167,7 @@ if __name__ == '__main__':
     from utility_functions import *
 
     overwrite_zstats =True
-    rootdir = "D:/PhD/HydroATLAS/data/Bernhard/HydroATLAS"
+    rootdir = "D:/globalIRmap/data/Bernhard/HydroATLAS"
     shapefiles_location = os.path.join(rootdir, 'HydroATLAS_Geometry', 'Link_shapefiles', 'link_hyriv_v1c.gdb')
     workspaceFolder = os.path.join(rootdir, 'tempworkspace')
     pathcheckcreate(workspaceFolder)
