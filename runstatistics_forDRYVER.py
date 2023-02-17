@@ -14,9 +14,6 @@ arcpy.env.overwriteOutput = True
 
 #Define paths
 #Folder structure
-rootdir = get_root_fromsrcdir()
-datdir = os.path.join(rootdir, 'data')
-resdir = os.path.join(rootdir, 'results')
 statpredgdb = os.path.join(resdir, 'DryverIRmodel_static_predictors_forMahdi_20221122', 'static_predictors.gdb')
 
 process_gdb = os.path.join(resdir, 'extend_HydroRIVERS_process.gdb')
@@ -32,29 +29,29 @@ gai3gdb = os.path.join(resdir, 'gai3_uav.gdb')
 dryver_predvargdb = os.path.join(resdir, 'net_dryver_predvars_zonalstats.gdb')
 pathcheckcreate(path=dryver_predvargdb, verbose=True)
 
-products_gdb = os.path.join(resdir, 'extend_HydroRIVERS_products.gdb')
+products_gdb = os.path.join(resdir, 'DRYVERnet.gdb')
 pathcheckcreate(path=products_gdb, verbose=True)
 
 #Output paths
-attri_tab = os.path.join(products_gdb, 'net_dryver_staticpredictors')
+attri_tab = os.path.join(products_gdb, 'dryvernet_attri_tab')
 
 #Set environment
 arcpy.env.extent = arcpy.env.snapRaster = dryver_netpourpoints_ras
 
 #Insert into a single table
 field_dict = {
-    'ai3_01_uav': 'ai_ix_01',
-    'ai3_02_uav': 'ai_ix_02',
-    'ai3_03_uav': 'ai_ix_03',
-    'ai3_04_uav': 'ai_ix_04',
-    'ai3_05_uav': 'ai_ix_05',
-    'ai3_06_uav': 'ai_ix_06',
-    'ai3_07_uav': 'ai_ix_07',
-    'ai3_08_uav': 'ai_ix_08',
-    'ai3_09_uav': 'ai_ix_09',
-    'ai3_10_uav': 'ai_ix_10',
-    'ai3_11_uav': 'ai_ix_11',
-    'ai3_12_uav': 'ai_ix_12',
+    'ai3_01_uav': 'ai_ix_m01_uav',
+    'ai3_02_uav': 'ai_ix_m02_uav',
+    'ai3_03_uav': 'ai_ix_m03_uav',
+    'ai3_04_uav': 'ai_ix_m04_uav',
+    'ai3_05_uav': 'ai_ix_m05_uav',
+    'ai3_06_uav': 'ai_ix_m06_uav',
+    'ai3_07_uav': 'ai_ix_m07_uav',
+    'ai3_08_uav': 'ai_ix_m08_uav',
+    'ai3_09_uav': 'ai_ix_m09_uav',
+    'ai3_10_uav': 'ai_ix_m10_uav',
+    'ai3_11_uav': 'ai_ix_m11_uav',
+    'ai3_12_uav': 'ai_ix_m12_uav',
     'up_area_skm_15s': 'UPLAND_SKM',
     'pnv_cl_umj': 'pnv_cl_umj',
     'glc_cl_umj': 'glc_cl_umj',
@@ -66,26 +63,28 @@ field_dict = {
     'whymap_karst_v1_ras15s_bool': 'kar_pc_p'
 }
 
-fast_joinfield(in_data=attri_tab,
-               in_field='DRYVER_RIVID',
-               join_table=dryver_netpourpoints,
-               join_field='DRYVER_RIVID',
-               fields=[['whymap_karst_v1_ras15s_bool_acc', 'kar_pc_use'], ['whymap_karst_v1_ras15s_bool', 'kar_pc_p']],
-               round=True)
-
 # ----------- Extract values ------------------------------------------------------
 statspred_paths = getfilelist(statpredgdb) + \
                   getfilelist(gai3gdb, repattern='ai3_[0-9]*_uav$')
 
 flist = [f.name for f in arcpy.ListFields(dryver_netpourpoints)]
+rtoextract = [f for f in statspred_paths #Only extract variable if it is:
+              if ((os.path.basename(f) in field_dict) and #in list of variales to add
+                  (os.path.basename(f) not in flist) and #its raw variable name is not already in target table
+                  (field_dict[os.path.basename(f)] not in flist) #its formatted variable name is not already in target table
+                  )]
+
 ExtractMultiValuesToPoints(in_point_features = dryver_netpourpoints,
-                           in_rasters = [
-                               f for f in statspred_paths #Only extract variable if it is:
-                               if ((os.path.basename(f) in field_dict) and #in list of variales to add
-                                   (os.path.basename(f) not in flist) and #its raw variable name is not already in target table
-                                   (field_dict[os.path.basename(f)] not in flist) #its formatted variable name is not already in target table
-                               )],
+                           in_rasters = rtoextract,
                            bilinear_interpolate_values = 'NONE')
+
+fast_joinfield(in_data=attri_tab,
+               in_field='DRYVER_RIVID',
+               join_table=dryver_netpourpoints,
+               join_field='DRYVER_RIVID',
+               fields=[['hylak_all_area_pc_x100_acc', 'lka_pc_use']],
+               round=True)
+
 
 #Format ID name
 if 'DRYVER_RIVID' not in [f.name for f in arcpy.ListFields(dryver_netline)]:
