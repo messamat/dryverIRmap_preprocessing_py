@@ -1,7 +1,6 @@
 import os.path
 
-from utility_functions import *
-from runUplandWeighting import *
+from utility_functions_py3 import *
 
 arcpy.CheckOutExtension('Spatial')
 arcpy.env.overwriteOutput = True
@@ -13,58 +12,6 @@ geomdir = os.path.join(datdir, 'HydroATLAS', 'HydroATLAS_Geometry')
 directionras = os.path.join(geomdir, 'Flow_directions', 'flow_dir_15s_global.gdb', 'flow_dir_15s')
 weightras = os.path.join(geomdir,'Accu_area_grids', 'pixel_area_skm_15s.gdb', 'px_area_skm_15s')
 uplandras = os.path.join(geomdir, 'Accu_area_grids', 'upstream_area_skm_15s.gdb', 'up_area_skm_15s')
-
-def hydroUplandWeighting(value_grid, direction_grid, weight_grid, upland_grid, scratch_dir,
-                        out_dir, shiftval=0, overwrite=False):
-    #Check that directories exist, otherwise, create them
-    pathcheckcreate(scratch_dir)
-    pathcheckcreate(out_dir)
-    arcpy.env.scratchWorkspace = scratch_dir
-
-    #UPLAND WEIGHT GRID
-    nameroot = os.path.splitext(os.path.split(value_grid)[1])[0]
-    out_grid = os.path.join(scratch_dir, '{}_acc'.format(nameroot))
-    xpxarea = os.path.join(scratch_dir, '{}_xpxarea'.format(nameroot))
-    xpxarea_ac1 = os.path.join(scratch_dir, '{}_xpxarea_ac1'.format(nameroot))
-    xpxarea_ac_fin = os.path.join(scratch_dir, '{}_xpxarea_ac_fin'.format(nameroot))
-
-    if (not arcpy.Exists(out_grid)) or (overwrite == True):
-        try:
-            set_environment(out_dir, direction_grid)
-
-            # Multiply input grid by pixel area
-            print('Processing {}...'.format(xpxarea))
-            valueXarea = Times(Raster(value_grid) + float(shiftval), Raster(weight_grid))
-            valueXarea.save(xpxarea)
-
-            # Flow accumulation of value grid and pixel area product
-            print('Processing {}...'.format(xpxarea_ac1))
-            outFlowAccumulation = FlowAccumulation(direction_grid, Raster(xpxarea), "FLOAT")
-            outFlowAccumulation.save(xpxarea_ac1)
-
-            print('Processing {}...'.format(xpxarea_ac_fin))
-            outFlowAccumulation_2 = Plus(xpxarea_ac1, xpxarea)
-            outFlowAccumulation_2.save(xpxarea_ac_fin)
-
-            # Divide by the accumulated pixel area grid
-            print('Processing {}...'.format(out_grid))
-            UplandGrid = (Divide(xpxarea_ac_fin, upland_grid)-shiftval)
-            UplandGrid.save(out_grid)
-
-        except Exception, e:
-            # If an error occurred, print line number and error message
-            import traceback, sys
-            tb = sys.exc_info()[2]
-            arcpy.AddMessage("Line %i" % tb.tb_lineno)
-            arcpy.AddMessage(str(e.message))
-
-        print('Deleting intermediate grids...')
-        for lyr in [xpxarea, xpxarea_ac1, xpxarea_ac_fin]:
-            if arcpy.Exists(lyr):
-                arcpy.Delete_management(lyr)
-    else:
-        print('{} already exists and overwrite==False...'.format(out_grid))
-
 
 ############################ Global Aridity Index v3 ###########################################################
 gai3_outdir = os.path.join(datdir, 'GAIv3')
