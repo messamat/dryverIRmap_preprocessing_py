@@ -10,6 +10,10 @@ def get_root_fromsrcdir():
     return(os.path.dirname(os.path.abspath(
         getsourcefile(lambda:0)))).split('\\src')[0]
 
+rootdir = get_root_fromsrcdir()
+datdir = os.path.join(rootdir, 'data')
+resdir = os.path.join(rootdir, 'results')
+
 def pathcheckcreate(path, verbose=True):
     """"Function that takes a path as input and:
       1. Checks which directories and .gdb exist in the path
