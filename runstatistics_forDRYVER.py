@@ -16,6 +16,12 @@ arcpy.env.overwriteOutput = True
 #Folder structure
 statpredgdb = os.path.join(resdir, 'DryverIRmodel_static_predictors_forMahdi_20221122', 'static_predictors.gdb')
 
+
+LRpred_resdir = os.path.join(resdir, 'LRpredictors')
+LRpred_runoffvar_gdb = os.path.join(LRpred_resdir, 'runoff_daily_var.gdb')
+LRpred_gwtorunoff_gdb = os.path.join(LRpred_resdir, 'qrdif_ql_ratio_mon_1981to2019.gdb')
+LRpred_prec_wetdays_gdb = os.path.join(LRpred_resdir, 'Prec_wetdays_1981_2019.gdb')
+
 process_gdb = os.path.join(resdir, 'extend_HydroRIVERS_process.gdb')
 dryver_netline = os.path.join(process_gdb, 'net_dryver_upao2_dis003')
 dryver_netpourpoints = os.path.join(process_gdb, 'net_dryver_upao2_dis003_pourpoints')
@@ -24,6 +30,11 @@ dryver_netcatchments = os.path.join(process_gdb, 'net_dryver_upao2_dis003_catchm
 
 #Input variable rasters
 gai3gdb = os.path.join(resdir, 'gai3_uav.gdb')
+
+
+#Create gdb for WaterGAP time-series predictors
+LRpred_tabgdb = os.path.join(resdir, 'LRpredtabs.gdb')
+pathcheckcreate(path=LRpred_tabgdb, verbose=True)
 
 #Create gdb for static predictors
 dryver_predvargdb = os.path.join(resdir, 'net_dryver_predvars_zonalstats.gdb')
@@ -34,9 +45,63 @@ pathcheckcreate(path=products_gdb, verbose=True)
 
 #Output paths
 attri_tab = os.path.join(products_gdb, 'dryvernet_attri_tab')
+dryver_netpourpoints_sub = os.path.join(process_gdb, 'net_dryver_upao2_dis003_pourpoints_sub')
 
 #Set environment
 arcpy.env.extent = arcpy.env.snapRaster = dryver_netpourpoints_ras
+
+#~~~~~~~~~~~~~~~~~ Extract low resolution predictors time series ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#Subset pourpoints
+ruv_list = getfilelist(LRpred_runoffvar_gdb)
+
+if not arcpy.Exists(dryver_netpourpoints_sub):
+    arcpy.analysis.Clip(in_features=dryver_netpourpoints,
+                        clip_features=arcpy.Describe(ruv_list[0]).extent.polygon,
+                        out_feature_class=dryver_netpourpoints_sub)
+
+def extract_rename(in_rasters, in_location_data, out_table, id_field, fieldroot):
+    Sample(in_rasters=in_rasters, in_location_data=in_location_data, out_table=out_table,
+           resampling_type='NEAREST', unique_id_field=id_field, layout='COLUMN_WISE', generate_feature_class='TABLE')
+
+    arcpy.management.AlterField(out_table, field=os.path.split(in_location_data)[1],
+                                new_field_name=id_field, new_field_alias=id_field)
+
+    for f in arcpy.ListFields(out_table):
+        rootvar = re.sub("[0-9]+$", "", os.path.split(ruv_list[0])[1])
+        if re.match(rootvar, f.name):
+            nfield = re.sub(
+                rootvar,
+                fieldroot,
+                re.sub("_Band_1", "", f.name)
+            )
+            arcpy.management.AlterField(out_table,
+                                        field=f.name,
+                                        new_field_name=nfield,
+                                        new_field_alias=nfield
+                                        )
+
+field_tswatergap_dict = {
+    'ruv_mm_um': ruv_list, #Runoff variability
+    'gtr_ix_u': getfilelist(LRpred_gwtorunoff_gdb), #Groundwater recharge to reunoff ratio
+    'pre_md_u': getfilelist(LRpred_prec_wetdays_gdb) #Number of precipitation days per month
+}
+
+for var in field_tswatergap_dict:
+    start = time.time()
+    out_table = os.path.join(LRpred_tabgdb, var)
+    if not arcpy.Exists(out_table):
+        print(f'Building {out_table}')
+        extract_rename(out_table=out_table,
+                       in_location_data=dryver_netpourpoints_sub,
+                       in_rasters=field_tswatergap_dict[var],
+                       id_field='DRYVER_RIVID',
+                       fieldroot = var
+                       )
+    else:
+        print(f'{out_table} already exists. Skipping...')
+    end = time.time()
+    print(end-start)
+
 
 #Insert into a single table
 field_dict = {
