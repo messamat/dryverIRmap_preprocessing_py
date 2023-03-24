@@ -17,6 +17,7 @@ hybas3 = os.path.join(datdir, 'hybas_lake_eu_lev01-12_v1c', 'hybas_lake_eu_lev03
 eu_net_gdb = os.path.join(eu_net_dir, 'dryver_net_eu.gdb')
 eu_net_ingdb = os.path.join(eu_net_gdb, 'dryver_net_eu')
 eu_net_modjoin = os.path.join(eu_net_gdb, 'dryver_net_eu_irclass')
+eu_net_modjoin_gpkg = os.path.join(eu_net_dir, 'dryver_net_eu_irclass.gpkg')
 
 eu_net_bas_gdb = os.path.join(eu_net_dir, 'dryver_net_eu_bybas.gdb')
 
@@ -42,6 +43,14 @@ if not arcpy.Exists(eu_net_modjoin):
                                   eu_net_modjoin)
     arcpy.management.Delete(eu_net_ingdb)
 
+if not arcpy.Exists(eu_net_modjoin_gpkg):
+    arcpy.management.CreateSQLiteDatabase(out_database_name=eu_net_modjoin_gpkg,
+                                          spatial_type='GEOPACKAGE')
+    arcpy.management.Copy(eu_net_modjoin,
+                          os.path.join(eu_net_modjoin_gpkg, os.path.splitext(os.path.split(eu_net_modjoin_gpkg)[1])[0]
+                                       )
+                          )
+
 #Takes too long to use joinfield
 # fast_joinfield(in_data=eu_net_ingdb,
 #                in_field='DRYVER_RIV',
@@ -64,18 +73,29 @@ for bas in baslist:
     arcpy.management.Rename(in_data=bas,
                             out_data=baslist[bas])
 
+#Export to shapefiles
+eu_net_bas_dir = os.path.splitext(eu_net_bas_gdb)[0]
+if not os.path.exists(eu_net_bas_dir):
+    os.mkdir(eu_net_bas_dir)
+for lyr in getfilelist(eu_net_bas_gdb):
+    out_lyr = f'{os.path.split(lyr)[1]}.shp'
+    out_path = os.path.join(eu_net_bas_dir, out_lyr)
+    if not arcpy.Exists(out_path):
+        print(f"Copying {f'{out_lyr}'}...")
+        arcpy.management.CopyFeatures(lyr, out_path)
+
 #------------------- Export for DRNs -----------------------------------------------------------------------------------
 if not arcpy.Exists(eu_net_drn_gdb):
     arcpy.management.CreateFileGDB(os.path.split(eu_net_drn_gdb)[0],
                                    os.path.split(eu_net_drn_gdb)[1])
 
 #Create starting points to trace upstream - NAME: DRYVER_RIV, to_node
-DRN_DRYVER_RIVdict = {'Vantaanjoki': [1329901, 2584173],
-                      'Morava': [5135971, 5083786],
-                      'Krka': [5310519, 6386824],
-                      'Guadiaro': [5106459,8165032],
-                      'Fekete_viz': [5252426, 5915872],
-                      'Ain': [4922854, 5887610]}
+DRN_DRYVER_RIVdict = {'Vantaanjoki': [1329901, 2579023],
+                      'Morava': [5135971, 5082714],
+                      'Krka': [5310519, 6390481],
+                      'Guadiaro': [5106459,	8162297],
+                      'Fekete_viz': [5252426, 5912663],
+                      'Ain': [4922854, 5885532]}
 
 #Trace upstream
 up_down_dict = {row[0]: row[1] for row in arcpy.da.SearchCursor(eu_net_modjoin, ['from_node', 'to_node'])}
@@ -90,7 +110,8 @@ for drn in DRN_DRYVER_RIVdict:
                            f'dryver_net_{drn}_irclass')
     if not arcpy.Exists(out_drn):
         print(f"Trace upstream for {drn}...")
-        last_to_node = [DRN_DRYVER_RIVdict[drn][1]]
+        DRN_DRYVER_trace[drn].add(DRN_DRYVER_RIVdict[drn][1])
+        last_to_node = {DRN_DRYVER_RIVdict[drn][1]}
         while len(last_to_node) > 0:
             #print(len(last_to_node))
             from_to_nodes = set()
@@ -107,3 +128,14 @@ for drn in DRN_DRYVER_RIVdict:
         arcpy.management.Delete('eu_net_drn_lyr')
     else:
         print(f"Subset network for {drn} already exists. skipping...")
+
+#Export to shapefiles
+eu_net_drn_dir = os.path.splitext(eu_net_drn_gdb)[0]
+if not os.path.exists(eu_net_drn_dir):
+    os.mkdir(eu_net_drn_dir)
+for lyr in getfilelist(eu_net_drn_gdb):
+    out_lyr = f'{os.path.split(lyr)[1]}.shp'
+    out_path = os.path.join(eu_net_drn_dir, out_lyr)
+    if not arcpy.Exists(out_path):
+        print(f"Copying {f'{out_lyr}'}...")
+        arcpy.management.CopyFeatures(lyr, out_path)
