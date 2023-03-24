@@ -6,9 +6,10 @@ arcpy.CheckOutExtension('Spatial')
 
 #Inputs
 eu_net_dir = os.path.join(resdir, 'eu_nets')
+eu_net_resdir = os.path.join(resdir, 'eu_nets_format')
 
 eu_net = os.path.join(eu_net_dir, '01_dryver_net_eu.shp')
-modres_csv = os.path.join(eu_net_dir, 'output_eu_rivers.csv')
+modres_csv = os.path.join(eu_net_resdir, 'output_eu_rivers.csv')
 
 #Hydrobasins level 3
 hybas3 = os.path.join(datdir, 'hybas_lake_eu_lev01-12_v1c', 'hybas_lake_eu_lev03_v1c.shp')
@@ -27,6 +28,16 @@ eu_net_drnpts = os.path.join(eu_net_drn_gdb, 'dryver_net_drns_prpoints')
 #Export as shp for hydrobasins level 3
 if not arcpy.Exists(eu_net_ingdb):
     arcpy.analysis.SpatialJoin(eu_net, hybas3, eu_net_ingdb)
+
+#Identify duplicates
+netidcount = defaultdict(int)
+for row in arcpy.da.SearchCursor(eu_net, 'DRYVER_RIV'):
+    netidcount[row[0]] += 1
+netduplis = [k for k,v in netidcount.items() if v > 2]
+arcpy.management.MakeFeatureLayer(
+    eu_net, 'eu_net_duplis_lyr',
+    where_clause=f'"DRYVER_RIV" IN ({", ".join([str(v) for v in netduplis])})')
+arcpy.management.CopyFeatures('eu_net_duplis_lyr', os.path.join(eu_net_dir, 'netduplis.shp'))
 
 #------------------- Join network to model outputs and export to file geodatabase ---------------------------------------
 if not arcpy.Exists(eu_net_gdb):
