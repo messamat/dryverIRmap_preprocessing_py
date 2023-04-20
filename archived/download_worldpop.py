@@ -1,3 +1,5 @@
+#In python 2.7 - would need to be ported to Python 3
+
 from utility_functions import *
 from bs4 import BeautifulSoup
 import requests

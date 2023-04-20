@@ -2,7 +2,6 @@ from utility_functions import *
 
 #Download ArcHYDRO
 #https://downloads.esri.com/archydro/archydro/Setup/10.7/10.7.0.78/
-import ArcHydroTools #Need to be downloaded and installed
 
 arcpy.CheckOutExtension('Spatial')
 arcpy.env.overwriteOutput = True

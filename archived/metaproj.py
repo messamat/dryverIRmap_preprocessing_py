@@ -2,16 +2,9 @@
 #https://janakiev.com/blog/python-filesystem-analysis/
 #https://gis.stackexchange.com/questions/34729/creating-table-containing-all-filenames-and-possibly-metadata-in-file-geodatab/34797#34797
 
-import arcpy
-import os
 import hashlib
-import pandas as pd
 from datetime import datetime
 from utility_functions import *
-import tempfile
-import codecs
-import cStringIO
-from xml.etree.ElementTree import ElementTree
 
 
 #Look at setloghistory and getloghistory

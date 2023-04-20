@@ -1,4 +1,3 @@
-from utility_functions import *
 from format_HydroSHEDS import *
 
 arcpy.CheckOutExtension('Spatial')

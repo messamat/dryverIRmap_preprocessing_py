@@ -1,12 +1,6 @@
 import arcpy
 import os
-import sys
-import arcgisscripting
-import time
 import datetime
-import math
-from arcpy import da
-from arcpy.sa import *
 
 # Use all of the cores on the machine
 arcpy.env.parallelProcessingFactor = "100%"

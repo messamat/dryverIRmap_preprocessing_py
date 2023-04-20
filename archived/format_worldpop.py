@@ -1,4 +1,5 @@
-from utility_functions import *
+#In python 2.7 - would need to be ported to Python 3
+
 from format_HydroSHEDS import *
 
 wp_outdir = os.path.join(datdir, 'worldpop_100m')
