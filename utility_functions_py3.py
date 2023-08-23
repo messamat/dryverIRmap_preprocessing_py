@@ -1,8 +1,10 @@
 import arcpy
 from arcpy.sa import *
 from inspect import getsourcefile
+from pathlib import Path
 import os
 import re
+import time
 import sys
 
 #Get current root directory
@@ -98,7 +100,7 @@ def getfilelist(dir, repattern=None, gdbf=True, nongdbf=True, fullpath=False):
         e = sys.exc_info()[1]
         print(e.args[0])
 
-def fast_joinfield(in_data, in_field, join_table, join_field, fields, round=False):
+def fast_joinfield(in_data, in_field, join_table, join_field, fields, round=False, factor=1):
     in_data_fields = [f.name for f in arcpy.ListFields(in_data)]
     join_table_ftypes = {f.name: f.type for f in arcpy.ListFields(join_table)}
 
@@ -127,7 +129,7 @@ def fast_joinfield(in_data, in_field, join_table, join_field, fields, round=Fals
             print('Writing in attri_tab')
             with arcpy.da.UpdateCursor(in_data, [in_field, fname_dest]) as cursor:
                 for row in cursor:
-                    row[1] = val_dict[row[0]]
+                    row[1] = factor*val_dict[row[0]]
                     cursor.updateRow(row)
 
 

@@ -10,3 +10,6 @@ dlfile(url = "https://figshare.com/ndownloader/files/34377269",
        outfile = 'Global-AI_v3_monthly',
        ignore_downloadable=True)
 
+
+https://ndownloader.figstatic.com/files/34377239
+

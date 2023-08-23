@@ -1,19 +1,12 @@
 #Import libraries
-import os.path
-
-import arcpy
-import numpy as np
-import pandas as pd
-import time
-
 from utility_functions_py3 import *
-from arcpy.sa import *
 
 arcpy.CheckOutExtension('Spatial')
 arcpy.env.overwriteOutput = True
 
 #Define paths
 #Folder structure
+HydroATLAS_datdir = os.path.join(datdir, 'HydroATLAS', 'HydroATLAS_Data')
 statpredgdb = os.path.join(resdir, 'static_predictors', 'static_predictors.gdb')
 
 LRpred_resdir = os.path.join(resdir, 'LRpredictors')
@@ -26,6 +19,8 @@ dryver_netline = os.path.join(process_gdb, 'net_dryver_upao2_dis003')
 dryver_netpourpoints = os.path.join(process_gdb, 'net_dryver_upao2_dis003_pourpoints')
 dryver_netpourpoints_ras = os.path.join(process_gdb, 'net_dryver_upao2_dis003_pourpoints_ras')
 dryver_netcatchments = os.path.join(process_gdb, 'net_dryver_upao2_dis003_catchments')
+
+#uparea_grid = os.path.join(data_from_frankfurt_dir, '12_downscalingdata_eu', 'euassi_upa_15s.tif')
 
 #Input variable rasters
 gai3gdb = os.path.join(resdir, 'static_predictors', 'gai3_uav.gdb')
@@ -100,9 +95,9 @@ for var in field_tswatergap_dict:
     end = time.time()
     print(end-start)
 
-
+#~~~~~~~~~~~~~~~~~ Extract accumulated variables at reach pour points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #Insert into a single table
-field_dict = {
+field_dict_upstream = {
     'ai3_01_uav': 'ai_ix_m01_uav',
     'ai3_02_uav': 'ai_ix_m02_uav',
     'ai3_03_uav': 'ai_ix_m03_uav',
@@ -115,7 +110,7 @@ field_dict = {
     'ai3_10_uav': 'ai_ix_m10_uav',
     'ai3_11_uav': 'ai_ix_m11_uav',
     'ai3_12_uav': 'ai_ix_m12_uav',
-    'up_area_skm_15s': 'UPLAND_SKM',
+    'euassi_upa_15s': 'UPLAND_SKM',
     'pnv_cl_umj': 'pnv_cl_umj',
     'glc_cl_umj': 'glc_cl_umj',
     'eenv90_slope_deg_x100_uav': 'slp_dg_uav',
@@ -127,17 +122,23 @@ field_dict = {
     'gmia_equipped_ext_pc_x100_acc': 'ire_pc_use',
     'wp_filled_acc': 'ppd_pk_uav',
     'dor_pc_pva': 'dor_pc_pva',
+    'cropland_ext_pc_x100_acc': 'crp_pc_use',
+    'pasture_ext_pc_x100_acc': 'pst_pc_use',
+    'carbon_tha_zeros_acc': 'soc_th_uav',
+    'ghs_smod_2015_urb_ext_pc_acc': 'urb_pc_use',
 }
 
-# ----------- Extract values ------------------------------------------------------
+# for cl in range(1, 23):
+#     field_dict_upstream[f'glc2000_ext_bin_cl{str(cl).zfill(2)}_acc'] = f'glc_pc_c{str(cl).zfill(2)}'
+
 statspred_paths = getfilelist(statpredgdb) + \
                   getfilelist(gai3gdb, repattern='ai3_[0-9]*_uav$')
 
 flist = [f.name for f in arcpy.ListFields(dryver_netpourpoints)]
 rtoextract = [f for f in statspred_paths #Only extract variable if it is:
-              if ((os.path.basename(f) in field_dict) and #in list of variales to add
+              if ((os.path.basename(f) in field_dict_upstream) and #in list of variales to add
                   (os.path.basename(f) not in flist) and #its raw variable name is not already in target table
-                  (field_dict[os.path.basename(f)] not in flist) #its formatted variable name is not already in target table
+                  (field_dict_upstream[os.path.basename(f)] not in flist) #its formatted variable name is not already in target table
                   )]
 
 ExtractMultiValuesToPoints(in_point_features = dryver_netpourpoints,
@@ -156,121 +157,97 @@ if not arcpy.Exists(attri_tab):
     arcpy.management.CopyRows(dryver_netpourpoints, attri_tab)
 
     print('Formatting fields...')
-    for field in field_dict:
+    for field in field_dict_upstream:
         if field in [f.name for f in arcpy.ListFields(attri_tab)]:
             arcpy.management.AlterField(attri_tab,
                                         field=field,
-                                        new_field_name=field_dict[field],
-                                        new_field_alias=field_dict[field])
+                                        new_field_name=field_dict_upstream[field],
+                                        new_field_alias=field_dict_upstream[field])
     oidfname = arcpy.Describe(attri_tab).OIDFieldName
     arcpy.management.DeleteField(attri_tab,
                                  [f.name for f in arcpy.ListFields(attri_tab)
-                                  if f.name not in ['DRYVER_RIVID']+list(field_dict.values())
+                                  if f.name not in ['DRYVER_RIVID']+list(field_dict_upstream.values())
                                  ])
 else:
     attriflist = [f.name for f in arcpy.ListFields(attri_tab)]
-    ftojoin = [[k, v] for k, v in field_dict.items() if v not in attriflist]
+    ftojoin = [[k, v] for k, v in field_dict_upstream.items() if v not in attriflist]
     if len(ftojoin) > 0:
         fast_joinfield(in_data=attri_tab,
                        in_field='DRYVER_RIVID',
                        join_table=dryver_netpourpoints,
                        join_field='DRYVER_RIVID',
                        fields=ftojoin,
-                       round=True)
+                       round=False)
+
+#~~~~~~~~~~~~~~~~~ Compute statistics within immediate reach catchments ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+field_dict_catchment = {
+    'ele_mt_cav': [os.path.join(HydroATLAS_datdir, 'Physiography', 'elevation_earthenv_dem90.gdb', 'eenv90_elevation_m'),
+                   'MEAN', 1],
+    'crp_pc_cse': [os.path.join(HydroATLAS_datdir, 'Landcover', 'agriculture_earthstat.gdb', 'cropland_ext_pc_x100'),
+                   'MEAN', 1],
+    'pst_pc_cse': [os.path.join(HydroATLAS_datdir, 'Landcover', 'agriculture_earthstat.gdb', 'pasture_ext_pc_x100'),
+                   'MEAN', 1],
+    'soc_th_cav': [os.path.join(statpredgdb, 'carbon_tha_zeros'),
+                   'MEAN', 1],
+    'urb_pc_cse': [os.path.join(HydroATLAS_datdir, 'Demography', 'urban_areas_ghs_v2016.gdb', 'ghs_smod_2015_urb_ext_pc'),
+                   'MEAN', 1],
+    'gwt_cm_cav': [os.path.join(statpredgdb, 'fan_gwt_depth_mm_px'),
+                   'MEAN', 1],
+    'ire_pc_cse': [os.path.join(HydroATLAS_datdir, 'Landcover', 'irrigation_gmia.gdb', 'gmia_equipped_ext_pc_x100'),
+                   'MEAN', 1],
+    'ppd_pk_cav': [os.path.join(resdir, 'static_predictors', 'worldpop.gdb', 'wp_filled'),
+                   'MEAN', 1]
+}
+
+for var in ['tmp_dc_c', 'pre_mm_c', 'pet_mm_c', 'snw_pc_c', 'glc_pc_c']:
+    for m in range(1, 23):
+        m_format = str(m).zfill(2)
+        factor = 1
+        if var == 'tmp_dc_c':
+            path_ext = os.path.join('Climate', 'air_temperature_worldclim_month.gdb',
+                            f'wclim_temp_deg_x10_m{m_format}')
+        if var == 'pre_mm_c':
+            path_ext = os.path.join('Climate', 'precipitation_worldclim_month.gdb',
+                            f'wclim_prec_mm_m{m_format}')
+        if var == 'pet_mm_c':
+            path_ext = os.path.join('Climate', 'potential_evapotrans_cgiar_month.gdb',
+                            f'global_pet_mm_m{m_format}'
+            )
+        # if var == 'snw_pc_c':
+        #     path_ext = os.path.join('Climate', 'snow_cover_extent_modis_month.gdb',
+        #                             f'snow_ext_pc_x100_m{m_format}'
+        #                             )
+        if var == 'glc_pc_c':
+            path_ext = os.path.join('Landcover', 'landcover_glc2000_by_class.gdb',
+                            f'glc2000_ext_bin_cl{m_format}')
+            factor= 100
+
+        path_full = os.path.join(HydroATLAS_datdir, path_ext)
+
+        if arcpy.Exists(path_full):
+            field_dict_catchment[f'{var}{m_format}'] = [path_full, 'MEAN', factor]
 
 #Compute groundwater depth in catchment
-gwt_cav_tab = os.path.join(dryver_predvargdb, 'gwt_cm_cav')
-if not arcpy.Exists(gwt_cav_tab):
-    ZonalStatisticsAsTable(in_zone_data=dryver_netcatchments,
-                           zone_field='Value',
-                           in_value_raster=os.path.join(statpredgdb, 'fan_gwt_depth_mm_px'),
-                           out_table=gwt_cav_tab,
-                           ignore_nodata='DATA',
-                           statistics_type='MEAN')
+attriflist = [f.name for f in arcpy.ListFields(attri_tab)]
+for var in field_dict_catchment:
+    if var not in attriflist:
+        print(f'Processing {var}...')
+        out_table = os.path.join(dryver_predvargdb, var)
 
+        if not arcpy.Exists(out_table):
+            print('Zonal statistics')
+            ZonalStatisticsAsTable(in_zone_data=dryver_netcatchments,
+                                   zone_field='Value',
+                                   in_value_raster=field_dict_catchment[var][0],
+                                   out_table=out_table,
+                                   ignore_nodata='DATA',
+                                   statistics_type=field_dict_catchment[var][1])
 
-fast_joinfield(in_data=attri_tab,
-               in_field='DRYVER_RIVID',
-               join_table=gwt_cav_tab,
-               join_field='Value',
-               fields=[['MEAN', 'gwt_cm_cav']],
-               round=True)
-
-#Compute snow extent in catchment
-for ras in getfilelist(dir = statpredgdb, repattern='snow_ext_pc_x100_m[0-9]{2}_px'):
-    out_snow_tab = os.path.join(dryver_predvargdb,
-                                re.sub('px', 'cav', os.path.basename(ras)))
-    if not arcpy.Exists(out_snow_tab):
-        print(f'Processing {out_snow_tab}...')
-        ZonalStatisticsAsTable(in_zone_data=dryver_netcatchments,
-                               zone_field='Value',
-                               in_value_raster=ras,
-                               out_table=out_snow_tab,
-                               ignore_nodata='DATA',
-                               statistics_type='MEAN')
-
-    fast_joinfield(in_data=attri_tab,
-                   in_field='DRYVER_RIVID',
-                   join_table=out_snow_tab,
-                   join_field='Value',
-                   fields=[['MEAN', re.sub('snow_ext_pc_x100_', 'snw_pc_', os.path.basename(out_snow_tab))]],
-                   round=True)
-
-#Compute snow extent in catchment
-for ras in getfilelist(dir = statpredgdb, repattern='snow_ext_pc_x100_m[0-9]{2}_px'):
-    out_snow_tab = os.path.join(dryver_predvargdb,
-                                re.sub('px', 'cav', os.path.basename(ras)))
-    if not arcpy.Exists(out_snow_tab):
-        print(f'Processing {out_snow_tab}...')
-        ZonalStatisticsAsTable(in_zone_data=dryver_netcatchments,
-                               zone_field='Value',
-                               in_value_raster=ras,
-                               out_table=out_snow_tab,
-                               ignore_nodata='DATA',
-                               statistics_type='MEAN')
-
-    fast_joinfield(in_data=attri_tab,
-                   in_field='DRYVER_RIVID',
-                   join_table=out_snow_tab,
-                   join_field='Value',
-                   fields=[['MEAN', re.sub('snow_ext_pc_x100_', 'snw_pc_', os.path.basename(out_snow_tab))]],
-                   round=True)
-
-#Compute population density in catchment
-worldpop_dens = os.path.join(resdir, 'static_predictors', 'worldpop.gdb', 'wp_filled')
-out_wp_tab = os.path.join(dryver_predvargdb, 'ppd_pk_cav')
-if not arcpy.Exists(out_wp_tab):
-    print(f'Processing {out_wp_tab}...')
-    ZonalStatisticsAsTable(in_zone_data=dryver_netcatchments,
-                           zone_field='Value',
-                           in_value_raster=worldpop_dens,
-                           out_table=out_wp_tab,
-                           ignore_nodata='DATA',
-                           statistics_type='MEAN')
-
-fast_joinfield(in_data=attri_tab,
-               in_field='DRYVER_RIVID',
-               join_table=out_wp_tab,
-               join_field='Value',
-               fields=[['MEAN', 'ppd_pk_cav']],
-               round=True)
-
-#Compute irrigated area extent in catchment
-gmia_pc = os.path.join(datdir, 'HydroATLAS', 'HydroATLAS_Data', 'Landcover', 'irrigation_gmia.gdb', 'gmia_equipped_ext_pc_x100') #MEAN
-out_gmia_tab = os.path.join(dryver_predvargdb, 'ire_pc_cse')
-if not arcpy.Exists(out_gmia_tab):
-    print(f'Processing {out_gmia_tab}...')
-    ZonalStatisticsAsTable(in_zone_data=dryver_netcatchments,
-                           zone_field='Value',
-                           in_value_raster=gmia_pc,
-                           out_table=out_gmia_tab,
-                           ignore_nodata='DATA',
-                           statistics_type='MEAN')
-
-fast_joinfield(in_data=attri_tab,
-               in_field='DRYVER_RIVID',
-               join_table=out_gmia_tab,
-               join_field='Value',
-               fields=[['MEAN', 'ire_pc_cse']],
-               round=True)
-
+        # print('Join field')
+        # fast_joinfield(in_data=attri_tab,
+        #                in_field='DRYVER_RIVID',
+        #                join_table=out_table,
+        #                join_field='Value',
+        #                fields=[[field_dict_catchment[var][1], var]],
+        #                factor=field_dict_catchment[var][2],
+        #                round=True)

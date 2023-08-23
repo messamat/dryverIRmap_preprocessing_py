@@ -17,12 +17,8 @@ resdir = os.path.join(rootdir, 'results')
 
 #Input data from hydrosheds
 hydrosheds_geometry_dir = os.path.join(datdir, 'HydroATLAS', 'HydroATLAS_Geometry')
-landmask_hydrosheds = os.path.join(hydrosheds_geometry_dir, 'Masks', 'hydrosheds_landmask_15s.gdb', 'hys_land_15s')
 flowdir_hydrosheds = os.path.join(hydrosheds_geometry_dir, 'Flow_directions' ,'flow_dir_15s_global.gdb', 'flow_dir_15s')
-upa_hydrosheds = os.path.join(hydrosheds_geometry_dir, 'Accu_area_grids', 'upstream_area_skm_15s.gdb', 'up_area_skm_15s')
 reaches_ras_hydrosheds = os.path.join(hydrosheds_geometry_dir, 'Link_zone_grids', 'link_stream.gdb', 'link_str_arc')
-dis_nat_15s_hydrorivers = os.path.join(datdir, 'HydroATLAS', 'HydroATLAS_Data', 'Hydrology',
-                                       'discharge_wg22_1971_2000.gdb', 'dis_nat_wg22_ls_year')
 
 #Input data from dryver WP1
 data_from_frankfurt_dir = os.path.join(datdir, 'data_from_frankfurt')
