@@ -3,9 +3,11 @@ from arcpy.sa import *
 from inspect import getsourcefile
 from pathlib import Path
 import os
+import pandas as pd
 import re
 import time
 import sys
+import zipfile
 
 #Get current root directory
 def get_root_fromsrcdir():
@@ -190,3 +192,73 @@ def hydroUplandWeighting(value_grid, direction_grid, weight_grid, upland_grid, s
                 arcpy.management.Delete(lyr)
     else:
         print('{} already exists and overwrite==False...'.format(out_grid))
+
+
+# Concatenate csv files
+def mergedelcsv(dir, repattern=None, skiprows=None, outfile=None, returndf=False, delete=False, verbose=False, sep=','):
+    flist = getfilelist(dir, repattern)
+    df = pd.concat([pd.read_csv(file, sep=sep, index_col=[0], parse_dates=[0], skiprows=skiprows)
+                    for file in flist],
+                   axis=0) \
+        .sort_index()
+
+    if outfile is not None:
+        df.to_csv(outfile)
+        print('Merged and written to {}'.format(outfile))
+
+    if delete == True:
+        for tab in flist:
+            os.remove(tab)
+            if verbose == True:
+                print('Delete {}'.format(tab))
+
+    if returndf == True:
+        return (df)
+
+
+# Identify duplicated feature shapes (in 'dupligroup' field) and create a non-duplicated layer if deletedupli=True
+def group_duplishape(in_features, deletedupli=False, out_featuresnodupli=None):
+    arcpy.AddField_management(in_features, 'dupligroup', 'SHORT')
+    dupliflag = {}
+    nunique = 0
+    with arcpy.da.UpdateCursor(in_features, ['SHAPE@XY', 'dupligroup']) as cursor:
+        for row in cursor:
+            if row[0] not in dupliflag:
+                nunique += 1
+                row[1] = nunique
+                dupliflag[row[0]] = nunique
+            else:
+                row[1] = dupliflag[row[0]]
+            cursor.updateRow(row)
+    print('Wrote duplicated group membership to "dupligroup" field in {}'.format(in_features))
+
+    # Remove duplicate locations for spatial processing
+    if deletedupli:
+        if not arcpy.Exists(out_featuresnodupli):
+            arcpy.CopyFeatures_management(in_features, out_featuresnodupli)
+
+            duplidel = []
+            with arcpy.da.UpdateCursor(out_featuresnodupli, ['SHAPE@XY']) as cursor:
+                for row in cursor:
+                    if row[0] not in duplidel:
+                        nunique += 1
+                        duplidel.append(row[0])
+                    else:
+                        print('Delete duplicate {}...'.format(row[0]))
+                        cursor.deleteRow()
+        else:
+            print('{} already exists, copy+deletion cancelled...'.format(out_featuresnodupli))
+
+def unzip(infile):
+    # Unzip folder
+    if zipfile.is_zipfile(infile):
+        print('Unzipping {}...'.format(os.path.split(infile)[1]))
+        with zipfile.ZipFile(infile) as zipf:
+            zipfilelist = [info.filename for info in zipf.infolist()]
+            listcheck = [f for f in zipfilelist if os.path.exists(os.path.join(infile, f))]
+            if len(listcheck) > 0:
+                print('Overwriting {}...'.format(', '.join(listcheck)))
+            zipf.extractall(os.path.split(infile)[0])
+        del zipf
+    else:
+        raise ValueError('Not a zip file')
