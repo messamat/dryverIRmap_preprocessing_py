@@ -30,7 +30,7 @@ scratchgdb = os.path.join(LRpred_resdir, 'scratch.gdb')
 pathcheckcreate(scratchgdb)
 
 
-#Get variables
+#Get variables (netcef and multiplier to convert variable to integer)
 LRpred_vardict = {}
 LRpred_vardict['Prec_wetdays_1981_2019'] = [os.path.join(LRpred_dir, "Prec_wetdays_1981_2019.nc"),
                                             pow(10,2)]
