@@ -6,47 +6,25 @@ import time
 arcpy.CheckOutExtension('Spatial')
 arcpy.env.overwriteOutput = True
 
-#Folder structure
-geomdir = os.path.join(datdir, 'HydroATLAS', 'HydroATLAS_Geometry')
+analysis_period = 'future'
 
 #Input layers (this would need to be edited for new direction maps)
 eu_flowdir_hydrosheds = os.path.join(datdir, 'HydroATLAS', 'HydroATLAS_Geometry', 'Flow_directions',
                                      'flow_dir_15s_by_continent.gdb', 'eu_dir_15s')
 
 data_from_frankfurt_dir = os.path.join(datdir, 'data_from_frankfurt')
-dis_nat_15s_dryver = os.path.join(data_from_frankfurt_dir, 'WaterGAP_mean_1981to2019.tif')
-
-pxarea_grid = os.path.join(data_from_frankfurt_dir, '12_downscalingdata_eu', 'euassi_pixarea_15s.tif')
-uparea_grid = os.path.join(data_from_frankfurt_dir, '12_downscalingdata_eu', 'euassi_upa_15s.tif')
-flowdir_grid = os.path.join(data_from_frankfurt_dir, '09_modifiedflowdir', 'eurasia_dir_geq0_15s.tif')
-
-#Output directories
-LRpred_dir = os.path.join(data_from_frankfurt_dir, 'LRpredictors_20230216')
-
-LRpred_resdir = os.path.join(resdir, 'LRpredictors')
-pathcheckcreate(LRpred_resdir)
-
-scratchgdb = os.path.join(LRpred_resdir, 'scratch.gdb')
-pathcheckcreate(scratchgdb)
-
-
-#Get variables (netcef and multiplier to convert variable to integer)
-LRpred_vardict = {}
-LRpred_vardict['Prec_wetdays_1981_2019'] = [os.path.join(LRpred_dir, "Prec_wetdays_1981_2019.nc"),
-                                            pow(10,2)]
-LRpred_vardict['qrdif_ql_ratio_mon_1981to2019'] = [os.path.join(LRpred_dir, "qrdif_ql_ratio_mon_1981to2019.nc"),
-                                                   pow(10,2)]
-LRpred_vardict['runoff_daily_var'] = [os.path.join(LRpred_dir, "runoff_daily_var.nc"),
-                                      pow(10,6)]
-
 
 def flowacc_nc(in_ncpath, in_var, in_template_extentlyr, in_template_resamplelyr,
                pxarea_grid, uparea_grid, flowdir_grid, out_resdir, scratchgdb, integer_multiplier):
-    out_croppedintnc = os.path.join(out_resdir, f"{in_var}_croppedint.nc")
-    LRpred_resgdb = os.path.join(out_resdir, f"{in_var}.gdb")
+
+    in_var_formatted = re.sub(r'[ -.]', '_', in_var)
+
+    out_croppedintnc = os.path.join(out_resdir, f"{in_var_formatted}_croppedint.nc")
+    LRpred_resgdb = os.path.join(out_resdir, f"{in_var_formatted}.gdb")
     pathcheckcreate(LRpred_resgdb)
 
     pred_nc = xr.open_dataset(in_ncpath)
+    new_variable_name = re.sub('\\s', '_', list(pred_nc.variables)[-1])
 
     # Crop xarray and convert it to integer
     if not arcpy.Exists(out_croppedintnc):
@@ -56,13 +34,16 @@ def flowacc_nc(in_ncpath, in_var, in_template_extentlyr, in_template_resamplelyr
                     list(pred_nc.dims)[1]: slice(templateext.YMax,
                                                  templateext.YMin)}  # Lat is from north to south so need to reverse slice order
         pred_nc_cropped = pred_nc.loc[cropdict]
-        (pred_nc_cropped * integer_multiplier).astype(np.intc).to_netcdf(out_croppedintnc)
+        (pred_nc_cropped * integer_multiplier).\
+            astype(np.intc).\
+            rename({list(pred_nc.variables)[-1]:new_variable_name}).\
+            to_netcdf(out_croppedintnc)
 
-    out_croppedint = os.path.join(scratchgdb, f"{in_var}_croppedint")
+    out_croppedint = os.path.join(scratchgdb, f"{in_var_formatted}_croppedint")
     if not arcpy.Exists(out_croppedint):
         print(f"Saving {out_croppedintnc} to {out_croppedint}")
         arcpy.md.MakeNetCDFRasterLayer(in_netCDF_file=out_croppedintnc,
-                                       variable=list(pred_nc.variables)[-1],
+                                       variable=new_variable_name,
                                        x_dimension=list(pred_nc.dims)[0],
                                        y_dimension=list(pred_nc.dims)[1],
                                        out_raster_layer='tmpras_check',
@@ -75,7 +56,7 @@ def flowacc_nc(in_ncpath, in_var, in_template_extentlyr, in_template_resamplelyr
     # Set environment
     arcpy.env.extent = arcpy.env.snapRaster = in_template_resamplelyr
     # Resample
-    out_rsmpbi = os.path.join(scratchgdb, f"{in_var}_rsmpbi")
+    out_rsmpbi = os.path.join(scratchgdb, f"{re.sub(r'[ -]', '_', in_var_formatted)}_rsmpbi")
     if not arcpy.Exists(out_rsmpbi):
         print(f"Resampling {out_croppedint}")
         arcpy.management.Resample(in_raster=out_croppedint,
@@ -86,7 +67,7 @@ def flowacc_nc(in_ncpath, in_var, in_template_extentlyr, in_template_resamplelyr
     for i in range(int(arcpy.management.GetRasterProperties(out_rsmpbi, 'BANDCOUNT').getOutput(0))):
         # Run weighting
         value_grid = os.path.join(out_rsmpbi, f'Band_{i + 1}')
-        out_grid = os.path.join(LRpred_resgdb, f'{in_var}_{i + 1}')
+        out_grid = os.path.join(LRpred_resgdb, f'{in_var_formatted}_{i + 1}')
 
         if not arcpy.Exists(out_grid):
             print(f"Running flow accumulation for {value_grid}")
@@ -102,14 +83,79 @@ def flowacc_nc(in_ncpath, in_var, in_template_extentlyr, in_template_resamplelyr
             end = time.time()
             print(end - start)
 
-for var in LRpred_vardict:
-    flowacc_nc(in_ncpath=LRpred_vardict[var][0],
-               in_var=var,
-               in_template_extentlyr=eu_flowdir_hydrosheds,
-               in_template_resamplelyr=dis_nat_15s_dryver,
-               pxarea_grid=pxarea_grid,
-               uparea_grid=uparea_grid,
-               flowdir_grid=flowdir_grid,
-               out_resdir=LRpred_resdir,
-               scratchgdb=scratchgdb,
-               integer_multiplier=LRpred_vardict[var][1])
+
+#---------------------------------- LR predictors downscaling for historical period ------------------------------------
+if analysis_period == 'historical':
+    dis_nat_15s_dryver = os.path.join(data_from_frankfurt_dir, 'WaterGAP_mean_1981to2019.tif')
+
+    pxarea_grid = os.path.join(data_from_frankfurt_dir, '12_downscalingdata_eu', 'euassi_pixarea_15s.tif')
+    uparea_grid = os.path.join(data_from_frankfurt_dir, '12_downscalingdata_eu', 'euassi_upa_15s.tif')
+    flowdir_grid = os.path.join(data_from_frankfurt_dir, '09_modifiedflowdir', 'eurasia_dir_geq0_15s.tif')
+
+    #Output directories
+    LRpred_dir = os.path.join(data_from_frankfurt_dir, 'LRpredictors_20230216')
+
+    LRpred_resdir = os.path.join(resdir, 'LRpredictors')
+    pathcheckcreate(LRpred_resdir)
+
+    scratchgdb = os.path.join(LRpred_resdir, 'scratch.gdb')
+    pathcheckcreate(scratchgdb)
+
+
+    #Get variables (netcef and multiplier to convert variable to integer)
+    LRpred_vardict = {}
+    LRpred_vardict['Prec_wetdays_1981_2019'] = [os.path.join(LRpred_dir, "Prec_wetdays_1981_2019.nc"),
+                                                pow(10,2)]
+    LRpred_vardict['qrdif_ql_ratio_mon_1981to2019'] = [os.path.join(LRpred_dir, "qrdif_ql_ratio_mon_1981to2019.nc"),
+                                                       pow(10,2)]
+    LRpred_vardict['runoff_daily_var'] = [os.path.join(LRpred_dir, "runoff_daily_var.nc"),
+                                          pow(10,6)]
+
+    for var in LRpred_vardict:
+        flowacc_nc(in_ncpath=LRpred_vardict[var][0],
+                   in_var=var,
+                   in_template_extentlyr=eu_flowdir_hydrosheds,
+                   in_template_resamplelyr=dis_nat_15s_dryver,
+                   pxarea_grid=pxarea_grid,
+                   uparea_grid=uparea_grid,
+                   flowdir_grid=flowdir_grid,
+                   out_resdir=LRpred_resdir,
+                   scratchgdb=scratchgdb,
+                   integer_multiplier=LRpred_vardict[var][1])
+
+# ---------------------------------- LR predictors downscaling for future climate scenarios ----------------------------
+if analysis_period == 'future':
+    dis_nat_15s_dryver = os.path.join(data_from_frankfurt_dir, 'WaterGAP_mean_1981to2019.tif')
+
+    pxarea_grid = os.path.join(data_from_frankfurt_dir, 'downscaling_static_data_eu', 'eu_pixarea_15s.tif')
+    uparea_grid = os.path.join(data_from_frankfurt_dir, 'downscaling_static_data_eu', 'eu_upa_15s.tif')
+    flowdir_grid = os.path.join(data_from_frankfurt_dir, 'downscaling_static_data_eu', 'eu_dir_15s.tif')
+
+    LRpred_datdir_gcms = os.path.join(data_from_frankfurt_dir, 'lr_predictors_GCMs')
+
+    LRpred_resdir_gcms = os.path.join(resdir, 'LRpredictors_downscaled_GCMS')
+    pathcheckcreate(LRpred_resdir_gcms)
+
+    scratchgdb = os.path.join(LRpred_resdir_gcms, 'scratch.gdb')
+    pathcheckcreate(scratchgdb)
+
+    #Get variables (netcef and multiplier to convert variable to integer)
+    LRpred_vardict = {os.path.splitext(os.path.split(f)[1])[0]: [f] for f in getfilelist(LRpred_datdir_gcms)}
+    for ts in LRpred_vardict:
+        if re.findall('wetdays', ts):
+            LRpred_vardict[ts].append(pow(10,2))
+        elif re.findall('qrdifoverql', ts):
+            LRpred_vardict[ts].append(pow(10,6))
+
+    for var in list(LRpred_vardict.keys())[12:15]: #Using the list(dict.keys()) allows to slice it the keys
+        flowacc_nc(in_ncpath=LRpred_vardict[var][0],
+                   in_var=var,
+                   in_template_extentlyr=flowdir_grid,
+                   in_template_resamplelyr=flowdir_grid,
+                   pxarea_grid=pxarea_grid,
+                   uparea_grid=uparea_grid,
+                   flowdir_grid=flowdir_grid,
+                   out_resdir=LRpred_resdir_gcms,
+                   scratchgdb=scratchgdb,
+                   integer_multiplier=LRpred_vardict[var][1])
+
