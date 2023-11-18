@@ -66,8 +66,8 @@ def flowacc_extract_nc(in_ncpath, in_var, in_template_extentlyr, in_template_res
         out_grid = os.path.join(LRpred_resgdb, f'{in_var}_{i + 1}')
         out_table = os.path.join(out_tabdir, f'{in_var}_{i + 1}')
 
-        if (not arcpy.Exists(out_grid) and save_raster) or \
-                (not arcpy.Exists(out_table) and save_tab):
+        if ((not arcpy.Exists(out_grid)) and save_raster) or \
+                ((not arcpy.Exists(out_table)) and save_tab):
             print(f"Running flow accumulation for {value_grid}")
             # Multiply input grid by pixel area
             start = time.time()
@@ -88,21 +88,13 @@ def flowacc_extract_nc(in_ncpath, in_var, in_template_extentlyr, in_template_res
                 arcpy.management.AlterField(out_table, field=os.path.split(in_location_data)[1],
                                             new_field_name=id_field, new_field_alias=id_field)
 
-                for f in arcpy.ListFields(out_table):
-                    rootvar = re.sub("[0-9]+$", "", os.path.split(UplandGrid[0])[1])
-                    if re.match(rootvar, f.name):
-                        nfield = re.sub(
-                            rootvar,
-                            fieldroot,
-                            re.sub("_Band_1", "", f.name)
-                        )
-                        arcpy.management.AlterField(out_table,
-                                                    field=f.name,
-                                                    new_field_name=nfield,
-                                                    new_field_alias=nfield
-                                                    )
-
-
+                field_to_rename = [f.name for f in arcpy.ListFields(out_table) if f.name not in
+                                    [id_field, 'X', 'Y', arcpy.Describe(out_table).OIDFieldName]]
+                arcpy.management.AlterField(out_table,
+                                            field=field_to_rename[0],
+                                            new_field_name=f'{fieldroot}_{i + 1}',
+                                            new_field_alias=f'{fieldroot}_{i + 1}'
+                                            )
             end = time.time()
             print(end - start)
 
@@ -204,7 +196,7 @@ if analysis_period == 'future':
         elif re.findall('qrdifoverql', ts):
             LRpred_vardict[ts].append(pow(10,6))
 
-    for var in list(LRpred_vardict.keys())[0:4]: #Using the list(dict.keys()) allows to slice it the keys
+    for var in list(LRpred_vardict.keys())[26:30]: #Using the list(dict.keys()) allows to slice it the keys
         in_var_formatted = re.sub(r'[ -.]', '_', var)
 
         scratchgdb_var = os.path.join(LRpred_resdir_gcms, 'scratch_{}.gdb'.format(in_var_formatted))
