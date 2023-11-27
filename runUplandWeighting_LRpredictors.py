@@ -2,6 +2,7 @@ from utility_functions_py3 import *
 import xarray as xr
 import numpy as np
 import time
+import netCDF4
 
 arcpy.CheckOutExtension('Spatial')
 arcpy.env.overwriteOutput = True
@@ -21,86 +22,90 @@ def flowacc_extract_nc(in_ncpath, in_var, in_template_extentlyr, in_template_res
     pred_nc = xr.open_dataset(in_ncpath)
     new_variable_name = re.sub('\\s', '_', list(pred_nc.variables)[-1])
 
-    # Crop xarray and convert it to integer
-    if not arcpy.Exists(out_croppedintnc):
-        print(f"Producing {out_croppedintnc}")
-        templateext = arcpy.Describe(in_template_extentlyr).extent
-        cropdict = {list(pred_nc.dims)[0]: slice(templateext.XMin, templateext.XMax),
-                    list(pred_nc.dims)[1]: slice(templateext.YMax,
-                                                 templateext.YMin)}  # Lat is from north to south so need to reverse slice order
-        pred_nc_cropped = pred_nc.loc[cropdict]
-        (pred_nc_cropped * integer_multiplier). \
-            astype(np.intc). \
-            rename({list(pred_nc.variables)[-1]:new_variable_name}). \
-            to_netcdf(out_croppedintnc)
+    out_tablist = [os.path.join(out_tabdir, f'{in_var}_{i + 1}') for i in range(pred_nc.coords.dims['Time (Month)'])]
 
-    out_croppedint = os.path.join(scratchgdb, f"{in_var}_croppedint")
-    if not arcpy.Exists(out_croppedint):
-        print(f"Saving {out_croppedintnc} to {out_croppedint}")
-        arcpy.md.MakeNetCDFRasterLayer(in_netCDF_file=out_croppedintnc,
-                                       variable=new_variable_name,
-                                       x_dimension=list(pred_nc.dims)[0],
-                                       y_dimension=list(pred_nc.dims)[1],
-                                       out_raster_layer='tmpras_check',
-                                       band_dimension=list(pred_nc.dims)[2],
-                                       value_selection_method='BY_INDEX',
-                                       cell_registration='CENTER')
-        output_ras = Raster('tmpras_check')
-        Con(output_ras >= 0, output_ras).save(out_croppedint)
+    if not all([arcpy.Exists(out_tab) for out_tab in out_tablist]):
+        # Crop xarray and convert it to integer
+        if not arcpy.Exists(out_croppedintnc):
+            print(f"Producing {out_croppedintnc}")
+            templateext = arcpy.Describe(in_template_extentlyr).extent
+            cropdict = {list(pred_nc.dims)[0]: slice(templateext.XMin, templateext.XMax),
+                        list(pred_nc.dims)[1]: slice(templateext.YMax,
+                                                     templateext.YMin)}  # Lat is from north to south so need to reverse slice order
+            pred_nc_cropped = pred_nc.loc[cropdict]
+            (pred_nc_cropped * integer_multiplier). \
+                astype(np.intc). \
+                rename({list(pred_nc.variables)[-1]:new_variable_name}). \
+                to_netcdf(out_croppedintnc)
 
-    # Set environment
-    arcpy.env.extent = arcpy.env.snapRaster = in_template_resamplelyr
-    # Resample
-    out_rsmpbi = os.path.join(scratchgdb, f"{re.sub(r'[ -]', '_', in_var)}_rsmpbi")
-    if not arcpy.Exists(out_rsmpbi):
-        print(f"Resampling {out_croppedint}")
-        arcpy.management.Resample(in_raster=out_croppedint,
-                                  out_raster=out_rsmpbi,
-                                  cell_size=arcpy.Describe(in_template_resamplelyr).MeanCellWidth,
-                                  resampling_type='BILINEAR')
+        out_croppedint = os.path.join(scratchgdb, f"{in_var}_croppedint")
+        if not arcpy.Exists(out_croppedint):
+            print(f"Saving {out_croppedintnc} to {out_croppedint}")
+            arcpy.md.MakeNetCDFRasterLayer(in_netCDF_file=out_croppedintnc,
+                                           variable=new_variable_name,
+                                           x_dimension=list(pred_nc.dims)[0],
+                                           y_dimension=list(pred_nc.dims)[1],
+                                           out_raster_layer='tmpras_check',
+                                           band_dimension=list(pred_nc.dims)[2],
+                                           value_selection_method='BY_INDEX',
+                                           cell_registration='CENTER')
+            output_ras = Raster('tmpras_check')
+            Con(output_ras >= 0, output_ras).save(out_croppedint)
+
+        # Set environment
+        arcpy.env.extent = arcpy.env.snapRaster = in_template_resamplelyr
+        # Resample
+        out_rsmpbi = os.path.join(scratchgdb, f"{re.sub(r'[ -]', '_', in_var)}_rsmpbi")
+        if not arcpy.Exists(out_rsmpbi):
+            print(f"Resampling {out_croppedint}")
+            arcpy.management.Resample(in_raster=out_croppedint,
+                                      out_raster=out_rsmpbi,
+                                      cell_size=arcpy.Describe(in_template_resamplelyr).MeanCellWidth,
+                                      resampling_type='BILINEAR')
 
 
-    for i in range(int(arcpy.management.GetRasterProperties(out_rsmpbi, 'BANDCOUNT').getOutput(0))):
-        # Run weighting
-        value_grid = os.path.join(out_rsmpbi, f'Band_{i + 1}')
-        out_grid = os.path.join(LRpred_resgdb, f'{in_var}_{i + 1}')
-        out_table = os.path.join(out_tabdir, f'{in_var}_{i + 1}')
+        for i in range(int(arcpy.management.GetRasterProperties(out_rsmpbi, 'BANDCOUNT').getOutput(0))):
+            # Run weighting
+            value_grid = os.path.join(out_rsmpbi, f'Band_{i + 1}')
+            out_grid = os.path.join(LRpred_resgdb, f'{in_var}_{i + 1}')
+            out_table = os.path.join(out_tabdir, f'{in_var}_{i + 1}')
 
-        if ((not arcpy.Exists(out_grid)) and save_raster) or \
-                ((not arcpy.Exists(out_table)) and save_tab):
-            print(f"Running flow accumulation for {value_grid}")
-            # Multiply input grid by pixel area
-            start = time.time()
-            valueXarea = Times(Raster(value_grid), Raster(pxarea_grid))
-            outFlowAccumulation = FlowAccumulation(in_flow_direction_raster=flowdir_grid,
-                                                   in_weight_raster=Raster(valueXarea),
-                                                   data_type="FLOAT")
-            outFlowAccumulation_2 = Plus(outFlowAccumulation, valueXarea)
-            UplandGrid = Int((Divide(outFlowAccumulation_2, Raster(uparea_grid))) + 0.5)
+            if ((not arcpy.Exists(out_grid)) and save_raster) or \
+                    ((not arcpy.Exists(out_table)) and save_tab):
+                print(f"Running flow accumulation for {value_grid}")
+                # Multiply input grid by pixel area
+                start = time.time()
+                valueXarea = Times(Raster(value_grid), Raster(pxarea_grid))
+                outFlowAccumulation = FlowAccumulation(in_flow_direction_raster=flowdir_grid,
+                                                       in_weight_raster=Raster(valueXarea),
+                                                       data_type="FLOAT")
+                outFlowAccumulation_2 = Plus(outFlowAccumulation, valueXarea)
+                UplandGrid = Int((Divide(outFlowAccumulation_2, Raster(uparea_grid))) + 0.5)
 
-            if save_raster:
-                UplandGrid.save(out_grid)
-            if save_tab:
-                Sample(in_rasters=UplandGrid, in_location_data=in_location_data, out_table=out_table,
-                       resampling_type='NEAREST', unique_id_field=id_field, layout='COLUMN_WISE',
-                       generate_feature_class='TABLE')
+                if save_raster:
+                    UplandGrid.save(out_grid)
+                if save_tab:
+                    Sample(in_rasters=UplandGrid, in_location_data=in_location_data, out_table=out_table,
+                           resampling_type='NEAREST', unique_id_field=id_field, layout='COLUMN_WISE',
+                           generate_feature_class='TABLE')
 
-                arcpy.management.AlterField(out_table, field=os.path.split(in_location_data)[1],
-                                            new_field_name=id_field, new_field_alias=id_field)
+                    arcpy.management.AlterField(out_table, field=os.path.split(in_location_data)[1],
+                                                new_field_name=id_field, new_field_alias=id_field)
 
-                field_to_rename = [f.name for f in arcpy.ListFields(out_table) if f.name not in
-                                    [id_field, 'X', 'Y', arcpy.Describe(out_table).OIDFieldName]]
-                arcpy.management.AlterField(out_table,
-                                            field=field_to_rename[0],
-                                            new_field_name=f'{fieldroot}_{i + 1}',
-                                            new_field_alias=f'{fieldroot}_{i + 1}'
-                                            )
-            end = time.time()
-            print(end - start)
+                    field_to_rename = [f.name for f in arcpy.ListFields(out_table) if f.name not in
+                                        [id_field, 'X', 'Y', arcpy.Describe(out_table).OIDFieldName]]
+                    arcpy.management.AlterField(out_table,
+                                                field=field_to_rename[0],
+                                                new_field_name=f'{fieldroot}_{i + 1}',
+                                                new_field_alias=f'{fieldroot}_{i + 1}'
+                                                )
+                end = time.time()
+                print(end - start)
 
-    arcpy.Delete_management(out_croppedint)
-    arcpy.Delete_management(out_rsmpbi)
-
+        # arcpy.Delete_management(out_croppedint)
+        # arcpy.Delete_management(out_rsmpbi)
+    else:
+        print("All tables already exists for {}".format(in_var))
 
 def extract_rename(in_rasters, in_location_data, out_table, id_field, fieldroot):
     Sample(in_rasters=in_rasters, in_location_data=in_location_data, out_table=out_table,
@@ -196,7 +201,9 @@ if analysis_period == 'future':
         elif re.findall('qrdifoverql', ts):
             LRpred_vardict[ts].append(pow(10,6))
 
-    for var in list(LRpred_vardict.keys())[26:30]: #Using the list(dict.keys()) allows to slice it the keys
+    #Indices done: 0: 'gfdl-esm4_r1i1p1f1_w5e5_historical_wetdays', 1: 'gfdl-esm4_r1i1p1f1_w5e5_ssp126_wetdays',
+    # 2:  'gfdl-esm4_r1i1p1f1_w5e5_ssp585_wetdays', 4: watergap2_2e_gfdl_esm4_w5e5_ssp126_2015soc_from_histsoc_qrdifoverql
+    for var in list(LRpred_vardict.keys())[4:8]: #Using the list(dict.keys()) allows to slice it the keys
         in_var_formatted = re.sub(r'[ -.]', '_', var)
 
         scratchgdb_var = os.path.join(LRpred_resdir_gcms, 'scratch_{}.gdb'.format(in_var_formatted))
