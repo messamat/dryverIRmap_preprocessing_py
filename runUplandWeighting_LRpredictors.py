@@ -203,7 +203,7 @@ if analysis_period == 'future':
 
     #Indices done: 0: 'gfdl-esm4_r1i1p1f1_w5e5_historical_wetdays', 1: 'gfdl-esm4_r1i1p1f1_w5e5_ssp126_wetdays',
     # 2:  'gfdl-esm4_r1i1p1f1_w5e5_ssp585_wetdays', 4: watergap2_2e_gfdl_esm4_w5e5_ssp126_2015soc_from_histsoc_qrdifoverql
-    for var in list(LRpred_vardict.keys())[8:10]: #Using the list(dict.keys()) allows to slice it the keys
+    for var in list(LRpred_vardict.keys())[14:16]: #Using the list(dict.keys()) allows to slice it the keys
         in_var_formatted = re.sub(r'[ -.]', '_', var)
 
         scratchgdb_var = os.path.join(LRpred_resdir_gcms, 'scratch_{}.gdb'.format(in_var_formatted))
@@ -211,7 +211,10 @@ if analysis_period == 'future':
 
         final_csvtab = os.path.join(LRpred_resdir_gcms, "{}.csv".format(in_var_formatted))
 
-        if not arcpy.Exists(final_csvtab):
+        if arcpy.Exists(final_csvtab):
+            print("{} already exists...".format(final_csvtab))
+
+        else :
             # Subset pourpoints if needed
             fieldroot = re.split('_', in_var_formatted)[-1]
             flowacc_extract_nc(in_ncpath=LRpred_vardict[var][0],
