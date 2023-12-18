@@ -128,6 +128,25 @@ def extract_rename(in_rasters, in_location_data, out_table, id_field, fieldroot)
                                         new_field_alias=nfield
                                         )
 
+def get_LRpred_pd(in_gdbtab, in_fieldroot, in_dtype, last_col=False):
+                print(in_gdbtab)
+
+                var_colname = "{0}_{1}".format(
+                    in_fieldroot,
+                    re.findall('[0-9]{1,3}$', os.path.split(in_gdbtab)[1])[0])
+
+                if last_col:
+                    step_pd = pd.DataFrame(data=arcpy.da.SearchCursor(in_gdbtab,
+                                                                      [f.name for f in arcpy.ListFields(in_gdbtab)][-1]),
+                                           dtype=in_dtype)
+                    step_pd.columns = [var_colname]
+                else:
+                    rcols = ['DRYVER_RIVID', var_colname]
+                    step_pd = pd.DataFrame(data=arcpy.da.SearchCursor(in_gdbtab, rcols),
+                                           columns=rcols,
+                                           dtype=in_dtype)
+                return(step_pd)
+
 #---------------------------------- LR predictors downscaling for historical period ------------------------------------
 if analysis_period == 'historical':
     # Input layers
@@ -183,11 +202,19 @@ if analysis_period == 'future':
     dryver_net_gdb = os.path.join(resdir, 'DRYVERnet.gdb')
     dryver_netpourpoints = os.path.join(dryver_net_gdb, 'dryvernet_prpt')
 
+
     dryver_netpourpoints_sub = os.path.join(dryver_net_gdb, 'dryvernet_prpt_sub')
     if not arcpy.Exists(dryver_netpourpoints_sub):
         arcpy.analysis.Clip(in_features=dryver_netpourpoints,
                             clip_features=arcpy.Describe(flowdir_grid).extent.polygon,
                             out_feature_class=dryver_netpourpoints_sub)
+
+        # subids = set(
+        #     pd.read_csv(os.path.join(data_from_frankfurt_dir, 'european_reaches_DRYVER_RIVID.csv'))['DRYVER_RIVID'])
+        # with arcpy.da.UpdateCursor(dryver_netpourpoints_sub, 'DRYVER_RIVID') as cursor:
+        #     for row in cursor:
+        #         if row[0] not in subids:
+        #             cursor.deleteRow()
 
     # Create gdb for WaterGAP time-series predictors
     LRpred_tabgdb = os.path.join(resdir, 'LRpredtabs.gdb')
@@ -203,7 +230,7 @@ if analysis_period == 'future':
 
     #Indices done: 0: 'gfdl-esm4_r1i1p1f1_w5e5_historical_wetdays', 1: 'gfdl-esm4_r1i1p1f1_w5e5_ssp126_wetdays',
     # 2:  'gfdl-esm4_r1i1p1f1_w5e5_ssp585_wetdays', 4: watergap2_2e_gfdl_esm4_w5e5_ssp126_2015soc_from_histsoc_qrdifoverql
-    for var in list(LRpred_vardict.keys())[14:16]: #Using the list(dict.keys()) allows to slice it the keys
+    for var in list(LRpred_vardict.keys())[12:14]: #Using the list(dict.keys()) allows to slice it the keys
         in_var_formatted = re.sub(r'[ -.]', '_', var)
 
         scratchgdb_var = os.path.join(LRpred_resdir_gcms, 'scratch_{}.gdb'.format(in_var_formatted))
@@ -238,24 +265,6 @@ if analysis_period == 'future':
             new_variable_name = re.sub('\\s', '_', list(pred_nc.variables)[-1])
             out_tablist = [os.path.join(LRpred_tabgdb, f'{in_var_formatted}_{i + 1}') for i in
                            range(pred_nc.coords.dims['Time (Month)'])]
-            def get_LRpred_pd(in_gdbtab, in_fieldroot, in_dtype, last_col=False):
-                print(in_gdbtab)
-
-                var_colname = "{0}_{1}".format(
-                    in_fieldroot,
-                    re.findall('[0-9]{1,3}$', os.path.split(in_gdbtab)[1])[0])
-
-                if last_col:
-                    step_pd = pd.DataFrame(data=arcpy.da.SearchCursor(in_gdbtab,
-                                                                      [f.name for f in arcpy.ListFields(in_gdbtab)][-1]),
-                                           dtype=in_dtype)
-                    step_pd.columns = [var_colname]
-                else:
-                    rcols = ['DRYVER_RIVID', var_colname]
-                    step_pd = pd.DataFrame(data=arcpy.da.SearchCursor(in_gdbtab, rcols),
-                                           columns=rcols,
-                                           dtype=in_dtype)
-                return(step_pd)
 
             if all([arcpy.Exists(out_tab) for out_tab in out_tablist]):
                 print("Concatenating tables...")
