@@ -203,18 +203,17 @@ if analysis_period == 'future':
     dryver_netpourpoints = os.path.join(dryver_net_gdb, 'dryvernet_prpt')
 
 
-    dryver_netpourpoints_sub = os.path.join(dryver_net_gdb, 'dryvernet_prpt_sub')
+    dryver_netpourpoints_sub = os.path.join(dryver_net_gdb, 'dryvernet_prpt_sub2')
     if not arcpy.Exists(dryver_netpourpoints_sub):
         arcpy.analysis.Clip(in_features=dryver_netpourpoints,
                             clip_features=arcpy.Describe(flowdir_grid).extent.polygon,
                             out_feature_class=dryver_netpourpoints_sub)
-
-        # subids = set(
-        #     pd.read_csv(os.path.join(data_from_frankfurt_dir, 'european_reaches_DRYVER_RIVID.csv'))['DRYVER_RIVID'])
-        # with arcpy.da.UpdateCursor(dryver_netpourpoints_sub, 'DRYVER_RIVID') as cursor:
-        #     for row in cursor:
-        #         if row[0] not in subids:
-        #             cursor.deleteRow()
+        subids = set(
+            pd.read_csv(os.path.join(data_from_frankfurt_dir, 'european_reaches_DRYVER_RIVID.csv'))['DRYVER_RIVID'])
+        with arcpy.da.UpdateCursor(dryver_netpourpoints_sub, 'DRYVER_RIVID') as cursor:
+            for row in cursor:
+                if row[0] not in subids:
+                    cursor.deleteRow()
 
     # Create gdb for WaterGAP time-series predictors
     LRpred_tabgdb = os.path.join(resdir, 'LRpredtabs.gdb')
@@ -230,7 +229,7 @@ if analysis_period == 'future':
 
     #Indices done: 0: 'gfdl-esm4_r1i1p1f1_w5e5_historical_wetdays', 1: 'gfdl-esm4_r1i1p1f1_w5e5_ssp126_wetdays',
     # 2:  'gfdl-esm4_r1i1p1f1_w5e5_ssp585_wetdays', 4: watergap2_2e_gfdl_esm4_w5e5_ssp126_2015soc_from_histsoc_qrdifoverql
-    for var in list(LRpred_vardict.keys())[12:14]: #Using the list(dict.keys()) allows to slice it the keys
+    for var in list(LRpred_vardict.keys())[18:20]: #Using the list(dict.keys()) allows to slice it the keys
         in_var_formatted = re.sub(r'[ -.]', '_', var)
 
         scratchgdb_var = os.path.join(LRpred_resdir_gcms, 'scratch_{}.gdb'.format(in_var_formatted))
