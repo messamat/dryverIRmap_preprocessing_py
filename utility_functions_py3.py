@@ -109,10 +109,11 @@ def fast_joinfield(in_data, in_field, join_table, join_field, fields, round=Fals
     for f in fields:
         fname_orig = f[0]  # Field name in join_table
         fname_dest = f[1]  # Field name in destination table (in_data)
-        print(f'Adding {fname_orig} from {os.path.basename(join_table)} as {fname_dest} to {os.path.basename(in_data)}')
+        print('Adding {0} from {1} as {2} to {3}'.format(
+            fname_orig, os.path.basename(join_table), fname_dest, os.path.basename(in_data)))
 
         if fname_dest in in_data_fields:
-            print(f'{fname_dest} is already in the attribute table of {in_data}')
+            print('{0} is already in the attribute table of {1}'.format(fname_dest, in_data))
         else:
             #Build dictionary of all values to join
             val_dict = {row[0]: row[1] for row in arcpy.da.SearchCursor(join_table, [join_field, fname_orig])}
